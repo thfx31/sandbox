@@ -1,0 +1,64 @@
+- name: Remove Snap and install Firefox and thunderbird without Snap packages
+  hosts: all
+
+  tasks:
+    - name: Check if snapd is installed
+      ansible.builtin.package_facts:
+      register: package_facts
+
+    - name: Remove Snapd and clean Snap packages if snapd is installed
+      when: "'snapd' in ansible_facts.packages"
+      block:
+        - name: Remove all installed Snap packages
+          community.general.snap:
+            name: "*"
+            state: absent
+
+        - name: Stop and disable Snap service
+          ansible.builtin.systemd:
+            name: snapd
+            state: stopped
+            enabled: no
+
+        - name: Remove Snap package and clean directories
+          ansible.builtin.apt:
+            name: snapd
+            state: absent
+            purge: yes
+
+        - name: Remove Snap residual directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/cache/snapd
+            - /var/lib/snapd
+
+    - name: Block Snap packages and priorize APT versions
+      ansible.builtin.copy:
+        dest: /etc/apt/preferences.d/no-snap
+        content: |
+          Package: firefox* thunderbird*
+          Pin: release o=Ubuntu*
+          Pin-Priority: -1
+          Package: *
+          Pin: release o=LP-PPA-mozillateam
+          Pin-Priority: 1000
+
+    - name: Add Mozilla Team PPA for Firefox and Thunderbird
+      ansible.builtin.apt_repository:
+        repo: ppa:mozillateam/ppa
+        state: present
+        update_cache: yes
+
+    - name: Install Firefox and Thunderbird (APT versions)
+      ansible.builtin.apt:
+        name:
+          - firefox
+          - thunderbird
+        state: present
+
+    - name: Install GNOME desktop environment
+      ansible.builtin.apt:
+        name: ubuntu-gnome-desktop
+        state: present
